@@ -7,6 +7,13 @@ Implementations of IBM models 1 and 2.
 """
 
 from collections import defaultdict
+import re
+import logging
+logging.basicConfig(level=logging.DEBUG)
+
+
+NULL_TOKEN = "<NULL>"
+LIMIT = 100 # how sentences to train on
 
 def preprocess(line):
     """
@@ -15,8 +22,10 @@ def preprocess(line):
     :return:
     """
 
-    line = line.lower() # Convert to lowercase
-
+    line = line.lower()  # to lower case
+    line = re.sub(r"\d+", "", line)  # remove digits
+    line = re.sub(r'[^\w\s]', "", line)  # remove all non-alphanumeric and non-space characters
+    line = re.sub(r"\s+", " ", line).strip()  # remove excess white spaces
     return line
 
 
@@ -28,20 +37,32 @@ def get_vocab(file):
     """
 
     vocab = set()
+    count = 0
     with open(file, 'r') as f:
         for line in f:
             line = preprocess(line)
             for word in line.split():
                 vocab.add(word)
+            count += 1
+            if count == LIMIT:
+                break
     return vocab
 
 def get_corpus(e_file, f_file):
 
     fe = open(e_file)
     ff = open(f_file)
+    count = 0
     for e_sent, f_sent in zip(fe, ff):
-        yield e_sent.split(), f_sent.split()
 
+        e_sent = preprocess(e_sent)
+        e_sent = NULL_TOKEN + " " + e_sent
+        f_sent = preprocess(f_sent)
+        yield (e_sent.split(), f_sent.split())
+
+        count += 1
+        if count == LIMIT:
+            break
 
 class IBM(object):
 
@@ -53,10 +74,17 @@ class IBM(object):
 
     def train(self, e_file="training/hansards.36.2.e", f_file="training/hansards.36.2.f", iters=10):
 
+        logging.info("Creating English vocabulary...")
         self.e_vocab = get_vocab(e_file)
+        self.e_vocab.add(NULL_TOKEN)
+
+        logging.info("Creating French vocabulary...")
         self.f_vocab = get_vocab(f_file)
 
+        logging.info("Initialising model parameters...")
         self.initialise_params()
+
+        logging.info("Training parameters with EM...")
         self.EM(e_file, f_file, iters)
 
 
@@ -108,6 +136,7 @@ class IBM(object):
             initial_value = 1.0/len(self.f_vocab)
             self.t = {e_word: {f_word: initial_value for f_word in self.f_vocab} for e_word in self.e_vocab}
 
+
         elif self.model == 2:
 
             # Initialise IBM2 parameters (some of which will be the same)
@@ -116,8 +145,8 @@ class IBM(object):
 
 def main():
     model = IBM()
-    model.train(e_file="mock/e", f_file="mock/f")
-    #model.train()
+    #model.train(e_file="mock/e", f_file="mock/f", iters=100)
+    model.train()
 
     #print(model.t['b']['x'])
     print(model.t)
