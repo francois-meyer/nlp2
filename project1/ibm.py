@@ -6,6 +6,9 @@ Python Version: 3.6
 Implementations of IBM models 1 and 2.
 """
 
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
 from collections import defaultdict
 import re
 import logging
@@ -50,6 +53,7 @@ def get_vocab(file):
 
 def get_corpus(e_file, f_file):
 
+
     fe = open(e_file)
     ff = open(f_file)
     count = 0
@@ -71,8 +75,14 @@ class IBM(object):
         self.t = None
         self.e_vocab = None
         self.f_vocab = None
+        self.plot = False
+        self.test = False
+        self.log_likelihoods = []
 
-    def train(self, e_file="training/hansards.36.2.e", f_file="training/hansards.36.2.f", iters=10):
+    def train(self, e_file="training/hansards.36.2.e", f_file="training/hansards.36.2.f", iters=10, plot=True, test=True):
+
+        self.plot = plot
+        self.test = test
 
         logging.info("Creating English vocabulary...")
         self.e_vocab = get_vocab(e_file)
@@ -87,12 +97,17 @@ class IBM(object):
         logging.info("Training parameters with EM...")
         self.EM(e_file, f_file, iters)
 
+        if self.plot:
+            ax = sns.lineplot(list(range(len(self.log_likelihoods))), self.log_likelihoods)
+            ax.set(xlabel="Training iterations", ylabel="Training log likelihood")
+            plt.title("Evolution of the training log likelihood")
+            plt.show()
+
 
     def EM(self, e_file, f_file, iters):
 
         # Train parameters with EM algorithm
         for i in range(iters):
-
 
             if self.model == 1:
 
@@ -122,11 +137,30 @@ class IBM(object):
                     for f_word in self.f_vocab:
                         self.t[e_word][f_word] = pair_counts[(e_word, f_word)] / word_counts[e_word]
 
+                # Compute and store training log likelihood
+                if self.plot:
+                    log_likelihood = self.get_log_likelihood(e_file, f_file)
+                    self.log_likelihoods.append(log_likelihood)
 
             elif self.model == 2:
                 # EM for IBM2
                 pass
 
+
+    def get_log_likelihood(self, e_file, f_file):
+
+        log_likelihood = 0.0
+
+        for e_sent, f_sent in get_corpus(e_file, f_file):
+            sentence_likelihood = 0.0
+            for f_word in f_sent:
+                for e_word in e_sent:
+                    sentence_likelihood += self.t[e_word][f_word]
+
+            if sentence_likelihood > 0.0:
+                log_likelihood += np.log(sentence_likelihood)
+
+        return log_likelihood
 
     def initialise_params(self):
 
