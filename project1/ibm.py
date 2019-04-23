@@ -27,9 +27,9 @@ def preprocess(line):
     """
 
     line = line.lower()  # to lower case
-    line = re.sub(r"\d+", "", line)  # remove digits
-    line = re.sub(r'[^\w\s]', "", line)  # remove all non-alphanumeric and non-space characters
-    line = re.sub(r"\s+", " ", line).strip()  # remove excess white spaces
+    #line = re.sub(r"\d+", "", line)  # remove digits
+    #line = re.sub(r'[^\w\s]', "", line)  # remove all non-alphanumeric and non-space characters
+    #line = re.sub(r"\s+", " ", line).strip()  # remove excess white spaces
     return line
 
 
@@ -116,6 +116,16 @@ class IBM(object):
             plt.title("Evolution of the validation AER")
             plt.show()
 
+        if self.test:
+            # Compute and store test AER
+            valid_aer = self.get_aer(e_file="testing/test/test.e",
+                                     f_file="testing/test/test.f",
+                                     align_file="testing/answers/test.wa.nonullalign",
+                                     output=True)
+            self.valid_aers.append(valid_aer)
+            logging.info("Test AER: " + str(valid_aer))
+
+
 
     def EM(self, e_file, f_file, iters):
 
@@ -188,36 +198,62 @@ class IBM(object):
 
 
 
-    def get_aer(self, e_file="validation/dev.e", f_file="validation/dev.f", align_file="validation/dev.wa.nonullalign"):
+    def get_aer(self, e_file="validation/dev.e", f_file="validation/dev.f", align_file="validation/dev.wa.nonullalign",
+                    output=False):
 
         gold_sets = read_naacl_alignments(align_file)
 
         # 2. Here you would have the predictions of your own algorithm
         predictions = []
-        for e_sent, f_sent in get_corpus(e_file, f_file, add_null=False):
+        for e_sent, f_sent in get_corpus(e_file, f_file):
 
             # For each english word, find the most likely aligned french word
             links = set()
-            for e_index, e_word in enumerate(e_sent):
+            for f_index, f_word in enumerate(f_sent):
                 max_t = 0.0
                 max_indices = None
-                for f_index, f_word in enumerate(f_sent):
+                for e_index, e_word in enumerate(e_sent):
                     if self.t[e_word][f_word] > max_t:
                         max_t = self.t[e_word][f_word]
-                        max_indices = (e_index+1, f_index+1)
+                        max_indices = (e_index, f_index)
 
-                if max_indices is not None:
+                if max_indices is not None and max_indices[0] != 0: # Not aligned to NULL word
+                    max_indices = (max_indices[0], max_indices[1]+1)
                     links.add(max_indices)
 
             predictions.append(links)
 
+        # for e_index, e_word in enumerate(e_sent):
+        #     max_t = 0.0
+        #     max_indices = None
+        #     for f_index, f_word in enumerate(f_sent):
+        #         if self.t[e_word][f_word] > max_t:
+        #             max_t = self.t[e_word][f_word]
+        #             max_indices = (e_index + 1, f_index + 1)
+
+
         # 3. Compute AER
         # first we get an object that manages sufficient statistics
         metric = AERSufficientStatistics()
+
         # then we iterate over the corpus
         for gold, pred in zip(gold_sets, predictions):
             metric.update(sure=gold[0], probable=gold[1], predicted=pred)
-        # AER
+
+        if output:
+            logging.info("Writing predicted test alignments to file.")
+            file_name = "ibm" + str(self.model) + ".mle.naacl"
+
+            # Clear file
+            open(file_name, 'w').close()
+
+            # Write predictions to file
+            with open(file_name, 'a') as file:
+                for i, pred in enumerate(predictions):
+                    for link in pred:
+                        file.write(str(i).zfill(4) + " " + str(link[0]) + " " + str(link[1]) + " S\n")
+
+
         return metric.aer()
 
 
@@ -259,7 +295,7 @@ def main():
     model.train()
 
     #print(model.t['b']['x'])
-    print(model.t)
+    #print(model.t)
 
 if __name__ == "__main__":
     main()
