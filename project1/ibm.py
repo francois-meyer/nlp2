@@ -6,11 +6,12 @@ Python Version: 3.6
 Implementations of IBM models 1 and 2.
 """
 
+from collections import defaultdict
+import re
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-from collections import defaultdict
-import re
+from aer import *
 import logging
 logging.basicConfig(level=logging.DEBUG)
 
@@ -51,7 +52,7 @@ def get_vocab(file):
                 break
     return vocab
 
-def get_corpus(e_file, f_file):
+def get_corpus(e_file, f_file, add_null=True):
 
 
     fe = open(e_file)
@@ -60,7 +61,8 @@ def get_corpus(e_file, f_file):
     for e_sent, f_sent in zip(fe, ff):
 
         e_sent = preprocess(e_sent)
-        e_sent = NULL_TOKEN + " " + e_sent
+        if add_null:
+            e_sent = NULL_TOKEN + " " + e_sent
         f_sent = preprocess(f_sent)
         yield (e_sent.split(), f_sent.split())
 
@@ -78,6 +80,7 @@ class IBM(object):
         self.plot = False
         self.test = False
         self.log_likelihoods = []
+        self.valid_aers = []
 
     def train(self, e_file="training/hansards.36.2.e", f_file="training/hansards.36.2.f", iters=10, plot=True, test=True):
 
@@ -98,16 +101,41 @@ class IBM(object):
         self.EM(e_file, f_file, iters)
 
         if self.plot:
-            ax = sns.lineplot(list(range(len(self.log_likelihoods))), self.log_likelihoods)
+            iterations = list(range(1, len(self.log_likelihoods)+1))
+            if len(self.log_likelihoods) > iters:
+                iterations = [0] + iterations
+                iterations = iterations[:-1]
+
+            ax = sns.lineplot(iterations, self.log_likelihoods)
             ax.set(xlabel="Training iterations", ylabel="Training log likelihood")
             plt.title("Evolution of the training log likelihood")
+            plt.show()
+
+            ax = sns.lineplot(iterations, self.valid_aers)
+            ax.set(xlabel="Training iterations", ylabel="AER on validation data")
+            plt.title("Evolution of the validation AER")
             plt.show()
 
 
     def EM(self, e_file, f_file, iters):
 
+        # Store log likelihood and AER before starting training (not really relevant)
+        # logging.info("Before training:")
+        # if self.plot:
+        #     # Compute and store training log likelihood
+        #     log_likelihood = self.get_log_likelihood(e_file, f_file)
+        #     self.log_likelihoods.append(log_likelihood)
+        #     logging.info("Training log likelihood: " + str(log_likelihood))
+        #
+        #     # Compute and store validation AER
+        #     valid_aer = self.get_aer()
+        #     self.valid_aers.append(valid_aer)
+        #     logging.info("Validation AER: " + str(valid_aer))
+
         # Train parameters with EM algorithm
         for i in range(iters):
+
+            logging.info("Starting iteration " + str(i))
 
             if self.model == 1:
 
@@ -137,17 +165,65 @@ class IBM(object):
                     for f_word in self.f_vocab:
                         self.t[e_word][f_word] = pair_counts[(e_word, f_word)] / word_counts[e_word]
 
-                # Compute and store training log likelihood
-                if self.plot:
-                    log_likelihood = self.get_log_likelihood(e_file, f_file)
-                    self.log_likelihoods.append(log_likelihood)
+
+
+
 
             elif self.model == 2:
                 # EM for IBM2
                 pass
 
 
+            logging.info("Complete")
+            if self.plot:
+                # Compute and store training log likelihood
+                log_likelihood = self.get_log_likelihood(e_file, f_file)
+                self.log_likelihoods.append(log_likelihood)
+                logging.info("Training log likelihood: " + str(log_likelihood))
+
+                # Compute and store validation AER
+                valid_aer = self.get_aer()
+                self.valid_aers.append(valid_aer)
+                logging.info("Validation AER: " + str(valid_aer))
+
+
+
+    def get_aer(self, e_file="validation/dev.e", f_file="validation/dev.f", align_file="validation/dev.wa.nonullalign"):
+
+        gold_sets = read_naacl_alignments(align_file)
+
+        # 2. Here you would have the predictions of your own algorithm
+        predictions = []
+        for e_sent, f_sent in get_corpus(e_file, f_file, add_null=False):
+
+            # For each english word, find the most likely aligned french word
+            links = set()
+            for e_index, e_word in enumerate(e_sent):
+                max_t = 0.0
+                max_indices = None
+                for f_index, f_word in enumerate(f_sent):
+                    if self.t[e_word][f_word] > max_t:
+                        max_t = self.t[e_word][f_word]
+                        max_indices = (e_index+1, f_index+1)
+
+                if max_indices is not None:
+                    links.add(max_indices)
+
+            predictions.append(links)
+
+        # 3. Compute AER
+        # first we get an object that manages sufficient statistics
+        metric = AERSufficientStatistics()
+        # then we iterate over the corpus
+        for gold, pred in zip(gold_sets, predictions):
+            metric.update(sure=gold[0], probable=gold[1], predicted=pred)
+        # AER
+        return metric.aer()
+
+
     def get_log_likelihood(self, e_file, f_file):
+
+        """TODO: Maybe add normalisation for alignment probabilities"""
 
         log_likelihood = 0.0
 
@@ -169,7 +245,7 @@ class IBM(object):
             # Store t(f|e) as t[e][f]
             initial_value = 1.0/len(self.f_vocab)
             self.t = {e_word: {f_word: initial_value for f_word in self.f_vocab} for e_word in self.e_vocab}
-
+            self.t = defaultdict(lambda: defaultdict(lambda: initial_value))
 
         elif self.model == 2:
 
