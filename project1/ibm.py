@@ -17,7 +17,7 @@ logging.basicConfig(level=logging.DEBUG)
 
 
 NULL_TOKEN = "<NULL>"
-LIMIT = 100 # how sentences to train on
+LIMIT = 0 # how sentences to train on
 
 def preprocess(line):
     """
@@ -135,7 +135,7 @@ class IBM(object):
         # Train parameters with EM algorithm
         for i in range(iters):
 
-            logging.info("Starting iteration " + str(i))
+            logging.info("Starting iteration " + str(i+1))
 
             if self.model == 1:
 
@@ -144,6 +144,7 @@ class IBM(object):
                 word_counts = defaultdict(float)
 
                 # Expectation step
+                logging.info("Expectation step")
                 for e_sent, f_sent in get_corpus(e_file, f_file):
 
                     normalise = {}
@@ -161,12 +162,11 @@ class IBM(object):
                             word_counts[e_word] += delta
 
                 # Maximisation step
-                for e_word in self.e_vocab:
-                    for f_word in self.f_vocab:
-                        self.t[e_word][f_word] = pair_counts[(e_word, f_word)] / word_counts[e_word]
-
-
-
+                logging.info("Maximisation step")
+                for e_sent, f_sent in get_corpus(e_file, f_file):
+                    for e_word in e_sent:
+                        for f_word in f_sent:
+                            self.t[e_word][f_word] = pair_counts[(e_word, f_word)] / word_counts[e_word]
 
 
             elif self.model == 2:
@@ -244,7 +244,7 @@ class IBM(object):
 
             # Store t(f|e) as t[e][f]
             initial_value = 1.0/len(self.f_vocab)
-            self.t = {e_word: {f_word: initial_value for f_word in self.f_vocab} for e_word in self.e_vocab}
+            #self.t = {e_word: {f_word: initial_value for f_word in self.f_vocab} for e_word in self.e_vocab}
             self.t = defaultdict(lambda: defaultdict(lambda: initial_value))
 
         elif self.model == 2:
