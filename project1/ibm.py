@@ -224,7 +224,7 @@ class IBM(object):
                 logging.info("Training log likelihood: " + str(log_likelihood))
 
                 # Check if training log likelihood has converged
-                if self.convergence_test_aer is None and len(self.log_likelihoods) >= 2 and self.log_likelihoods[-1] < 1.01 * self.log_likelihoods[-2]:
+                if self.convergence_test_aer is None and len(self.log_likelihoods) >= 2 and self.log_likelihoods[-1] < 1.001 * self.log_likelihoods[-2]:
                     test_aer = self.get_aer(e_file="testing/test/test.e",
                                             f_file="testing/test/test.f",
                                             align_file="testing/answers/test.wa.nonullalign",
