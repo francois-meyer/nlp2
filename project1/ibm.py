@@ -17,7 +17,7 @@ logging.basicConfig(level=logging.DEBUG)
 
 
 NULL_TOKEN = "<NULL>"
-LIMIT = 0 # how many sentences to train on
+LIMIT = 0# how many sentences to train on
 
 def preprocess(line):
     """
@@ -86,7 +86,8 @@ class IBM(object):
         self.convergence_test_aer = None
         self.convergence_iter = None
 
-        self.best_valid_test_aer = 1.01
+        self.best_valid_test_aer = None
+        self.best_valid_aer = 1.01
         self.best_valid_iter = None
 
     def train(self, e_file="training/hansards.36.2.e", f_file="training/hansards.36.2.f", iters=10,
@@ -124,7 +125,7 @@ class IBM(object):
                 self.convergence_iter = iters
 
             # Check if the best validation AER has been set, if not then set it
-            if self.best_valid_test_aer == 1.01:
+            if self.best_valid_test_aer is None:
                 test_aer = self.get_aer(e_file="testing/test/test.e",
                                         f_file="testing/test/test.f",
                                         align_file="testing/answers/test.wa.nonullalign",
@@ -158,7 +159,7 @@ class IBM(object):
             ax.set_xlabel(xlabel="Training iterations", fontsize=14)
             ax.set_ylabel(ylabel="Training log likelihood", fontsize=14)
             plt.title("IBM Model " + str(self.model) + " - Evolution of the training log likelihood", fontsize=14)
-            plt.plot(self.convergence_iter, self.log_likelihoods[self.convergence_iter -1 ], "r.", markersize=15)
+            plt.plot(self.convergence_iter, self.log_likelihoods[self.convergence_iter -1], "r.", markersize=15)
             plt.savefig("train_ibm" + str(self.model))
             plt.show()
 
@@ -238,7 +239,8 @@ class IBM(object):
                 logging.info("Validation AER: " + str(valid_aer))
 
                 # Check if the current validation AER is the best so far
-                if self.best_valid_test_aer > valid_aer:
+                if self.best_valid_aer > valid_aer:
+                    self.best_valid_aer = valid_aer
                     test_aer = self.get_aer(e_file="testing/test/test.e",
                                             f_file="testing/test/test.f",
                                             align_file="testing/answers/test.wa.nonullalign",
