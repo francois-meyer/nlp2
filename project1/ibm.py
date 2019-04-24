@@ -17,7 +17,7 @@ logging.basicConfig(level=logging.DEBUG)
 
 
 NULL_TOKEN = "<NULL>"
-LIMIT = 0 # how sentences to train on
+LIMIT = 1000 # how sentences to train on
 
 def preprocess(line):
     """
@@ -26,7 +26,7 @@ def preprocess(line):
     :return:
     """
 
-    line = line.lower()  # to lower case
+    #line = line.lower()  # to lower case
     #line = re.sub(r"\d+", "", line)  # remove digits
     #line = re.sub(r'[^\w\s]', "", line)  # remove all non-alphanumeric and non-space characters
     #line = re.sub(r"\s+", " ", line).strip()  # remove excess white spaces
@@ -44,7 +44,7 @@ def get_vocab(file):
     count = 0
     with open(file, 'r') as f:
         for line in f:
-            line = preprocess(line)
+            #line = preprocess(line)
             for word in line.split():
                 vocab.add(word)
             count += 1
@@ -60,10 +60,10 @@ def get_corpus(e_file, f_file, add_null=True):
     count = 0
     for e_sent, f_sent in zip(fe, ff):
 
-        e_sent = preprocess(e_sent)
+        #e_sent = preprocess(e_sent)
         if add_null:
             e_sent = NULL_TOKEN + " " + e_sent
-        f_sent = preprocess(f_sent)
+        #f_sent = preprocess(f_sent)
         yield (e_sent.split(), f_sent.split())
 
         count += 1
@@ -77,13 +77,16 @@ class IBM(object):
         self.t = None
         self.e_vocab = None
         self.f_vocab = None
+        self.valid = None
         self.plot = False
         self.test = False
         self.log_likelihoods = []
         self.valid_aers = []
 
-    def train(self, e_file="training/hansards.36.2.e", f_file="training/hansards.36.2.f", iters=10, plot=True, test=True):
+    def train(self, e_file="training/hansards.36.2.e", f_file="training/hansards.36.2.f", iters=10,
+              valid=True, plot=True, test=True):
 
+        self.valid = valid
         self.plot = plot
         self.test = test
 
@@ -109,21 +112,22 @@ class IBM(object):
             ax = sns.lineplot(iterations, self.log_likelihoods)
             ax.set(xlabel="Training iterations", ylabel="Training log likelihood")
             plt.title("Evolution of the training log likelihood")
+            plt.savefig("train_ibm" + str(self.model))
             plt.show()
 
             ax = sns.lineplot(iterations, self.valid_aers)
             ax.set(xlabel="Training iterations", ylabel="AER on validation data")
             plt.title("Evolution of the validation AER")
+            plt.savefig("valid_ibm" + str(self.model))
             plt.show()
 
         if self.test:
             # Compute and store test AER
-            valid_aer = self.get_aer(e_file="testing/test/test.e",
+            test_aer = self.get_aer(e_file="testing/test/test.e",
                                      f_file="testing/test/test.f",
                                      align_file="testing/answers/test.wa.nonullalign",
                                      output=True)
-            self.valid_aers.append(valid_aer)
-            logging.info("Test AER: " + str(valid_aer))
+            logging.info("Test AER: " + str(test))
 
 
 
@@ -185,7 +189,7 @@ class IBM(object):
 
 
             logging.info("Complete")
-            if self.plot:
+            if self.valid:
                 # Compute and store training log likelihood
                 log_likelihood = self.get_log_likelihood(e_file, f_file)
                 self.log_likelihoods.append(log_likelihood)
@@ -251,7 +255,7 @@ class IBM(object):
             with open(file_name, 'a') as file:
                 for i, pred in enumerate(predictions):
                     for link in pred:
-                        file.write(str(i).zfill(4) + " " + str(link[0]) + " " + str(link[1]) + " S\n")
+                        file.write(str(i+1).zfill(4) + " " + str(link[0]) + " " + str(link[1]) + " S\n")
 
 
         return metric.aer()
@@ -292,7 +296,7 @@ class IBM(object):
 def main():
     model = IBM()
     #model.train(e_file="mock/e", f_file="mock/f", iters=100)
-    model.train()
+    model.train(iters=3)
 
     #print(model.t['b']['x'])
     #print(model.t)
