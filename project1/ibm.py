@@ -127,7 +127,7 @@ class IBM(object):
                                      f_file="testing/test/test.f",
                                      align_file="testing/answers/test.wa.nonullalign",
                                      output=True)
-            logging.info("Test AER: " + str(test))
+            logging.info("Test AER: " + str(test_aer))
 
 
 
@@ -211,19 +211,19 @@ class IBM(object):
         predictions = []
         for e_sent, f_sent in get_corpus(e_file, f_file):
 
-            # For each english word, find the most likely aligned french word
+            # For each french word, find the most likely aligned english word
             links = set()
             for f_index, f_word in enumerate(f_sent):
                 max_t = 0.0
-                max_indices = None
+                max_a = 0 # assume null aligned
                 for e_index, e_word in enumerate(e_sent):
                     if self.t[e_word][f_word] > max_t:
                         max_t = self.t[e_word][f_word]
-                        max_indices = (e_index, f_index)
+                        max_a = e_index
 
-                if max_indices is not None and max_indices[0] != 0: # Not aligned to NULL word
-                    max_indices = (max_indices[0], max_indices[1]+1)
-                    links.add(max_indices)
+                if max_a != 0: # Not aligned to NULL word
+                    link = (max_a, f_index+1)
+                    links.add(link)
 
             predictions.append(links)
 
@@ -254,9 +254,13 @@ class IBM(object):
             # Write predictions to file
             with open(file_name, 'a') as file:
                 for i, pred in enumerate(predictions):
+                    if pred == set():
+                        file.write(str(i+1).zfill(4) + " 0 0 S\n")
+
                     for link in pred:
                         file.write(str(i+1).zfill(4) + " " + str(link[0]) + " " + str(link[1]) + " S\n")
 
+        print(metric.aer())
 
         return metric.aer()
 
