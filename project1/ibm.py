@@ -17,7 +17,7 @@ logging.basicConfig(level=logging.DEBUG)
 
 
 NULL_TOKEN = "<NULL>"
-LIMIT = 1000 # how sentences to train on
+LIMIT = 0 # how many sentences to train on
 
 def preprocess(line):
     """
@@ -83,6 +83,12 @@ class IBM(object):
         self.log_likelihoods = []
         self.valid_aers = []
 
+        self.convergence_test_aer = None
+        self.convergence_iter = None
+
+        self.best_valid_test_aer = 1.01
+        self.best_valid_iter = None
+
     def train(self, e_file="training/hansards.36.2.e", f_file="training/hansards.36.2.f", iters=10,
               valid=True, plot=True, test=True):
 
@@ -103,6 +109,45 @@ class IBM(object):
         logging.info("Training parameters with EM...")
         self.EM(e_file, f_file, iters)
 
+        if self.test:
+
+            test_aer = None
+
+            # Check if convergence AER has been set, if not then set it
+            if self.convergence_test_aer is None:
+                test_aer = self.get_aer(e_file="testing/test/test.e",
+                                        f_file="testing/test/test.f",
+                                        align_file="testing/answers/test.wa.nonullalign",
+                                        output=True,
+                                        selection="convergence")
+                self.convergence_test_aer = test_aer
+                self.convergence_iter = iters
+
+            # Check if the best validation AER has been set, if not then set it
+            if self.best_valid_test_aer == 1.01:
+                test_aer = self.get_aer(e_file="testing/test/test.e",
+                                        f_file="testing/test/test.f",
+                                        align_file="testing/answers/test.wa.nonullalign",
+                                        output=True,
+                                        selection="validation")
+                self.best_valid_test_aer = test_aer
+                self.best_valid_iter = iters
+
+            if test_aer is None:
+                test_aer = self.get_aer(e_file="testing/test/test.e",
+                                        f_file="testing/test/test.f",
+                                        align_file="testing/answers/test.wa.nonullalign")
+
+            logging.info("Final test AER: " + str(test_aer))
+
+            logging.info("Selected models:")
+
+            logging.info("Training log likelihood converged at iteration " + str(self.convergence_iter))
+            logging.info("Test AER:" + str(self.convergence_test_aer))
+
+            logging.info("Best validation AER obtained at iteration " + str(self.best_valid_iter))
+            logging.info("Test AER:" + str(self.best_valid_test_aer))
+
         if self.plot:
             iterations = list(range(1, len(self.log_likelihoods)+1))
             if len(self.log_likelihoods) > iters:
@@ -110,41 +155,23 @@ class IBM(object):
                 iterations = iterations[:-1]
 
             ax = sns.lineplot(iterations, self.log_likelihoods)
-            ax.set(xlabel="Training iterations", ylabel="Training log likelihood")
-            plt.title("Evolution of the training log likelihood")
+            ax.set_xlabel(xlabel="Training iterations", fontsize=14)
+            ax.set_ylabel(ylabel="Training log likelihood", fontsize=14)
+            plt.title("IBM Model " + str(self.model) + " - Evolution of the training log likelihood", fontsize=14)
+            plt.plot(self.convergence_iter, self.log_likelihoods[self.convergence_iter -1 ], "r.", markersize=15)
             plt.savefig("train_ibm" + str(self.model))
             plt.show()
 
             ax = sns.lineplot(iterations, self.valid_aers)
-            ax.set(xlabel="Training iterations", ylabel="AER on validation data")
-            plt.title("Evolution of the validation AER")
+            ax.set_xlabel(xlabel="Training iterations", fontsize=14)
+            ax.set_ylabel(ylabel="AER on validation data", fontsize=14)
+            plt.title("IBM Model " + str(self.model) + " - Evolution of the validation AER", fontsize=14)
+            plt.plot(self.best_valid_iter, self.valid_aers[self.best_valid_iter - 1], "r.", markersize=15)
             plt.savefig("valid_ibm" + str(self.model))
             plt.show()
 
-        if self.test:
-            # Compute and store test AER
-            test_aer = self.get_aer(e_file="testing/test/test.e",
-                                     f_file="testing/test/test.f",
-                                     align_file="testing/answers/test.wa.nonullalign",
-                                     output=True)
-            logging.info("Test AER: " + str(test_aer))
-
-
 
     def EM(self, e_file, f_file, iters):
-
-        # Store log likelihood and AER before starting training (not really relevant)
-        # logging.info("Before training:")
-        # if self.plot:
-        #     # Compute and store training log likelihood
-        #     log_likelihood = self.get_log_likelihood(e_file, f_file)
-        #     self.log_likelihoods.append(log_likelihood)
-        #     logging.info("Training log likelihood: " + str(log_likelihood))
-        #
-        #     # Compute and store validation AER
-        #     valid_aer = self.get_aer()
-        #     self.valid_aers.append(valid_aer)
-        #     logging.info("Validation AER: " + str(valid_aer))
 
         # Train parameters with EM algorithm
         for i in range(iters):
@@ -195,15 +222,35 @@ class IBM(object):
                 self.log_likelihoods.append(log_likelihood)
                 logging.info("Training log likelihood: " + str(log_likelihood))
 
+                # Check if training log likelihood has converged
+                if self.convergence_test_aer is None and len(self.log_likelihoods) >= 2 and self.log_likelihoods[-1] < 1.01 * self.log_likelihoods[-2]:
+                    test_aer = self.get_aer(e_file="testing/test/test.e",
+                                            f_file="testing/test/test.f",
+                                            align_file="testing/answers/test.wa.nonullalign",
+                                            output=True,
+                                            selection="convergence")
+                    self.convergence_test_aer = test_aer
+                    self.convergence_iter = i + 1
+
                 # Compute and store validation AER
-                valid_aer = self.get_aer()
+                valid_aer = self.get_aer() # on validation set
                 self.valid_aers.append(valid_aer)
                 logging.info("Validation AER: " + str(valid_aer))
+
+                # Check if the current validation AER is the best so far
+                if self.best_valid_test_aer > valid_aer:
+                    test_aer = self.get_aer(e_file="testing/test/test.e",
+                                            f_file="testing/test/test.f",
+                                            align_file="testing/answers/test.wa.nonullalign",
+                                            output=True,
+                                            selection="validation")
+                    self.best_valid_test_aer = test_aer
+                    self.best_valid_iter = i + 1
 
 
 
     def get_aer(self, e_file="validation/dev.e", f_file="validation/dev.f", align_file="validation/dev.wa.nonullalign",
-                    output=False):
+                    output=False, selection="validation"):
 
         gold_sets = read_naacl_alignments(align_file)
 
@@ -227,26 +274,14 @@ class IBM(object):
 
             predictions.append(links)
 
-        # for e_index, e_word in enumerate(e_sent):
-        #     max_t = 0.0
-        #     max_indices = None
-        #     for f_index, f_word in enumerate(f_sent):
-        #         if self.t[e_word][f_word] > max_t:
-        #             max_t = self.t[e_word][f_word]
-        #             max_indices = (e_index + 1, f_index + 1)
-
-
         # 3. Compute AER
-        # first we get an object that manages sufficient statistics
         metric = AERSufficientStatistics()
-
-        # then we iterate over the corpus
         for gold, pred in zip(gold_sets, predictions):
             metric.update(sure=gold[0], probable=gold[1], predicted=pred)
 
         if output:
             logging.info("Writing predicted test alignments to file.")
-            file_name = "ibm" + str(self.model) + ".mle.naacl"
+            file_name = "ibm" + str(self.model) + ".mle.naacl_" + selection
 
             # Clear file
             open(file_name, 'w').close()
@@ -254,13 +289,8 @@ class IBM(object):
             # Write predictions to file
             with open(file_name, 'a') as file:
                 for i, pred in enumerate(predictions):
-                    if pred == set():
-                        file.write(str(i+1).zfill(4) + " 0 0 S\n")
-
                     for link in pred:
                         file.write(str(i+1).zfill(4) + " " + str(link[0]) + " " + str(link[1]) + " S\n")
-
-        print(metric.aer())
 
         return metric.aer()
 
