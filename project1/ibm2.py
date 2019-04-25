@@ -166,7 +166,7 @@ class IBM(object):
             ax.set_ylabel(ylabel="Training log likelihood", fontsize=14)
             plt.title("IBM Model " + str(self.model) + " - Evolution of the training log likelihood", fontsize=14)
             plt.plot(self.convergence_iter, self.log_likelihoods[self.convergence_iter - 1], "r.", markersize=15)
-            plt.savefig("train_ibm" + str(self.model))
+            plt.savefig("train_ibm" + str(self.model) + str(self.initialization))
             plt.show()
 
             ax = sns.lineplot(iterations, self.valid_aers)
@@ -174,7 +174,7 @@ class IBM(object):
             ax.set_ylabel(ylabel="AER on validation data", fontsize=14)
             plt.title("IBM Model " + str(self.model) + " - Evolution of the validation AER", fontsize=14)
             plt.plot(self.best_valid_iter, self.valid_aers[self.best_valid_iter - 1], "r.", markersize=15)
-            plt.savefig("valid_ibm" + str(self.model))
+            plt.savefig("valid_ibm" + str(self.model) + str(self.initialization))
             plt.show()
 
     def EM(self, e_file, f_file, iters):
@@ -233,12 +233,12 @@ class IBM(object):
                     for j, f_word in enumerate(f_sent):
                         # Sum translation probabilities of f words over all e words
                         normalise[f_word] = 0.0
-                        for i, e_word in enumerate(e_sent):
-                            normalise[f_word] += self.t[e_word][f_word] * self.jump[0, self.get_jump(i, j, l, m)]
+                        for k, e_word in enumerate(e_sent):
+                            normalise[f_word] += self.t[e_word][f_word] * self.jump[0, self.get_jump(k, j, l, m)]
 
                         # Update counts
-                        for i, e_word in enumerate(e_sent):
-                            idx = self.get_jump(i, j, l, m)
+                        for k, e_word in enumerate(e_sent):
+                            idx = self.get_jump(k, j, l, m)
                             #  if normalise[f_word] == 0:
                             #      print('help!')
                             #      delta = 0
@@ -330,6 +330,9 @@ class IBM(object):
         if output:
             logging.info("Writing predicted test alignments to file.")
             file_name = "ibm" + str(self.model) + ".mle.naacl_" + selection
+
+            if self.model == 2:
+                file_name = file_name + "_" + self.initialization
 
             # Clear file
             open(file_name, 'w').close()
