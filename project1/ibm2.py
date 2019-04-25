@@ -19,7 +19,7 @@ logging.basicConfig(level=logging.DEBUG)
 
 NULL_TOKEN = "<NULL>"
 LIMIT = 0  # how many sentences to train on
-
+import ibm
 
 def preprocess(line):
     """
@@ -305,9 +305,16 @@ class IBM(object):
                 max_t = 0.0
                 max_a = 0  # assume null aligned
                 for e_index, e_word in enumerate(e_sent):
-                    if self.t[e_word][f_word] > max_t:
-                        max_t = self.t[e_word][f_word]
-                        max_a = e_index
+
+                    if self.model == 1:
+                        if self.t[e_word][f_word] > max_t:
+                            max_t = self.t[e_word][f_word]
+                            max_a = e_index
+                    elif self.model == 2:
+                        t = self.t[e_word][f_word] * self.get_jump(e_index, f_index, len(e_sent), len(f_sent))
+                        if t > max_t:
+                            max_t = t
+                            max_a = e_index
 
                 if max_a != 0:  # Not aligned to NULL word
                     link = (max_a, f_index + 1)
@@ -375,6 +382,13 @@ class IBM(object):
                 # self.t = {e_word: {f_word: random.uniform(0.1, 0.9) for f_word in self.f_vocab} for e_word in
                 #           self.e_vocab}
                 self.t = defaultdict(lambda: defaultdict(lambda: random.uniform(0.1, 0.9)))
+
+            elif self.initialization == "ibm1":
+
+                # Train an ibm1 model and use its t parameters to initialise this model's parameters
+                model = ibm.IBM(model=1)
+                model.train(iters=10, valid=False, plot=False, test=False)
+                self.t = model.t
 
             # initializing jump
             self.jump = 1. / (2 * self.max_jump) * np.ones((1, 2 * self.max_jump), dtype=np.float)
