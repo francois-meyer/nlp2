@@ -2,7 +2,7 @@
 # and back (i2w).
 
 from collections import Counter
-
+import torch
 
 class Vocab(object):
 
@@ -10,6 +10,12 @@ class Vocab(object):
         self.counter = Counter()
         self.word2index = {}
         self.index2word = []
+
+        self.PAD_INDEX = 0
+        self.UNK_INDEX = 1
+        self.SOS_INDEX = 2
+        self.EOS_INDEX = 3
+
 
     def update(self, word):
         self.counter.update([word])
@@ -44,15 +50,24 @@ def build_vocab(corpus_file):
 
     return vocab
 
-
-def get_batch(sentences, vocab):
+def get_batch(sentences, vocab, batch_size):
 
     input_indices = []
     target_indices = []
 
-    for sentence in sentences:
-        sentence_indices = [vocab.get_index(w) if vocab.contains(w) else vocab.get_index("<UNK>") for w in sentence]
-        input_indices.append(["<SOS>"] + sentence_indices)
-        target_indices.append(sentence_indices + ["<EOS>"])
+    count = 0
 
-    return input_indices, target_indices
+    for sentence in sentences:
+        sentence_indices = [vocab.get_index(w) if vocab.contains(w) else vocab.UNK_INDEX for w in sentence]
+        input_indices.append([vocab.SOS_INDEX] + sentence_indices)
+        target_indices.append(sentence_indices + [vocab.EOS_INDEX])
+
+        count += 1
+        if count == batch_size:
+            break
+
+
+    max_length = max([len(sent) for sent in input_indices])
+    input_indices = [sentence_indices + [vocab.PAD_INDEX] * (max_length - len(sentence_indices)) for sentence_indices in input_indices]
+    target_indices = [sentence_indices + [vocab.PAD_INDEX] * (max_length - len(sentence_indices)) for sentence_indices in target_indices]
+    return torch.LongTensor(input_indices), torch.LongTensor(target_indices)
