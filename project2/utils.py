@@ -27,18 +27,32 @@ class Vocab(object):
     def size(self):
         return len(self.word2index)
 
-def build_vocab(corpus_file):
-    """
 
-    :param corpus_file:
-    :return:
-    """
+def build_vocab(corpus_file):
 
     # Go through each sentence in the corpus, adding words to the vocabulary
     vocab = Vocab()
+    vocab.update("<PAD>")
+    vocab.update("<UNK>")
+    vocab.update("<SOS>")
+    vocab.update("<EOS>")
+
     with open(corpus_file) as file:
         for line in file:
             for token in line.split():
                 vocab.update(token)
 
     return vocab
+
+
+def get_batch(sentences, vocab):
+
+    input_indices = []
+    target_indices = []
+
+    for sentence in sentences:
+        sentence_indices = [vocab.get_index(w) if vocab.contains(w) else vocab.get_index("<UNK>") for w in sentence]
+        input_indices.append(["<SOS>"] + sentence_indices)
+        target_indices.append(sentence_indices + ["<EOS>"])
+
+    return input_indices, target_indices
