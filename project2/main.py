@@ -18,7 +18,7 @@ class RNNLM(nn.Module):
         self.hidden_size = hidden_size
 
         self.embed = nn.Embedding(vocab.size(), input_size, padding_idx=0)
-        self.gru = nn.GRU(input_size, hidden_size)
+        self.gru = nn.GRU(input_size, hidden_size, batch_first=True)
         self.affine = nn.Linear(hidden_size, vocab.size())
 
         # nn.Sequential(
@@ -30,7 +30,7 @@ class RNNLM(nn.Module):
 
         embeddings = self.embed(input_indices)
         outputs, hiddens = self.gru(embeddings)
-        logits = self.affine(hiddens)
+        logits = self.affine(outputs)
         return logits
 
 
@@ -47,10 +47,12 @@ def train(model, vocab, sentences, epochs, batch_size):
         while next_batch:
 
             input_indices, target_indices = get_batch(sentences, vocab, batch_size)
-            logits = model(input_indices)
-            #targets = target_indices.vi
 
-            loss = cross_entropy_loss(logits, target_indices)
+            logits = model(input_indices)
+            num_examples = target_indices.size(0) * target_indices.size(1)
+
+
+            loss = cross_entropy_loss(logits.view([num_examples, -1]), target_indices.view(-1))
             train_loss += loss.item()
 
             # erase previous gradients
@@ -62,12 +64,15 @@ def train(model, vocab, sentences, epochs, batch_size):
             # update weights - take a small step in the opposite dir of the gradient
             optimizer.step()
 
-        logging.info("Training loss:")
+            if len(input_indices) < batch_size:
+                break
+
+        logging.info("Training loss:" + str(train_loss))
 
 def main():
 
     # Training data
-    train_file = "data/02-21.10way.clean"
+    train_file = "data/mock" #""data/02-21.10way.clean"
     sentences = LineSentence(train_file)
 
     # Layer sizes
