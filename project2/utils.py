@@ -50,22 +50,15 @@ def build_vocab(corpus_file):
 
     return vocab
 
-def get_batch(sentences, vocab, batch_size):
+def get_batch(sentences, vocab):
 
     input_indices = []
     target_indices = []
-
-    count = 0
 
     for sentence in sentences:
         sentence_indices = [vocab.get_index(w) if vocab.contains(w) else vocab.UNK_INDEX for w in sentence]
         input_indices.append([vocab.SOS_INDEX] + sentence_indices)
         target_indices.append(sentence_indices + [vocab.EOS_INDEX])
-
-        count += 1
-        if count == batch_size:
-            break
-
 
     max_length = max([len(sent) for sent in input_indices])
     input_indices = [sentence_indices + [vocab.PAD_INDEX] * (max_length - len(sentence_indices)) for sentence_indices in input_indices]

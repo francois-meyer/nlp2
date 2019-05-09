@@ -4,10 +4,6 @@ from torch import optim
 from utils import *
 from gensim.models.word2vec import LineSentence
 
-import logging
-logging.basicConfig(level=logging.DEBUG)
-
-
 class RNNLM(nn.Module):
 
     def __init__(self, vocab, input_size, hidden_size):
@@ -34,60 +30,88 @@ class RNNLM(nn.Module):
         return logits
 
 
-def train(model, vocab, sentences, epochs, batch_size):
+def train_batch(model, batch_sentences, log_softmax, criterion, optimizer):
 
-    cross_entropy_loss = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=0.01)
+    # Get batch and propagate forward
+    input_indices, target_indices = get_batch(batch_sentences, model.vocab)
+    logits = model(input_indices)
+    num_examples = target_indices.size(0) * target_indices.size(1)
+
+    # Compute NLL loss
+    log_softmax = log_softmax(logits.view([num_examples, -1]))
+    loss = criterion(log_softmax, target_indices.view(-1))
+    batch_loss = loss.item()
+
+    # Backpropagate error
+    model.zero_grad()
+    loss.backward()
+    optimizer.step()
+
+    return batch_loss
+
+def train(model, sentences, epochs, batch_size, lr):
+
+    log_softmax = nn.LogSoftmax()
+    criterion = nn.NLLLoss()
+    optimizer = optim.Adam(model.parameters(), lr=lr)
 
     for i in range(epochs):
-
         train_loss = 0
+        batch_sentences = []
+        for sentence in sentences:
+            batch_sentences.append(sentence)
+            if len(batch_sentences) == batch_size:
+                train_loss += train_batch(model, batch_sentences, log_softmax, criterion, optimizer)
+                batch_sentences = []
 
-        next_batch = True
-        while next_batch:
+        if len(batch_sentences) > 0:
+            train_loss += train_batch(model, batch_sentences, log_softmax, criterion, optimizer)
 
-            input_indices, target_indices = get_batch(sentences, vocab, batch_size)
+        print("Training loss:" + str(train_loss))
 
-            logits = model(input_indices)
-            num_examples = target_indices.size(0) * target_indices.size(1)
+def evaluate(model, sentences, batch_size):
 
 
-            loss = cross_entropy_loss(logits.view([num_examples, -1]), target_indices.view(-1))
-            train_loss += loss.item()
 
-            # erase previous gradients
-            model.zero_grad()
+def generate(model, n, max_len=20):
 
-            # compute gradients
-            loss.backward()
+    samples = []
+    with torch.no_grad():
+        while len(samples) < n:
+            next_word = "<SOS>"
+            sample = [next_word]
+            while next_word != "<EOS>" and len(sample) <= max_len:
+                logits = model(torch.LongTensor([[model.vocab.word2index[next_word]]]))
+                max_index = torch.argmax(logits)
+                next_word = model.vocab.index2word[max_index]
+                sample.append(next_word)
+            samples.append(sample)
+    return samples
 
-            # update weights - take a small step in the opposite dir of the gradient
-            optimizer.step()
-
-            if len(input_indices) < batch_size:
-                break
-
-        logging.info("Training loss:" + str(train_loss))
 
 def main():
 
     # Training data
-    train_file = "data/mock" #""data/02-21.10way.clean"
+    train_file = "data/vw.txt" #""data/02-21.10way.clean"
     sentences = LineSentence(train_file)
 
     # Layer sizes
     input_size = 100
     hidden_size = 100
 
-    # Training iterations
+    # Training
+    lr = 0.01
     epochs = 10
     batch_size = 10
 
     # Create and train model
     vocab = build_vocab(train_file)
     model = RNNLM(vocab, input_size, hidden_size)
-    train(model, vocab, sentences, epochs, batch_size)
+    train(model, sentences, epochs, batch_size, lr)
 
+    # Generate samples
+    samples = generate(model, n=10)
+    print(samples)
 
 if __name__ == "__main__":
     main()
