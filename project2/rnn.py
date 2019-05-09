@@ -26,7 +26,7 @@ class RNNLM(nn.Module):
     def forward(self, input_indices):
 
         embeddings = self.embed(input_indices)
-        outputs, hiddens = self.gru(embeddings)
+        outputs, final_hidden = self.gru(embeddings)
         logits = self.affine(outputs)
         return logits
 
@@ -61,16 +61,18 @@ def process_batch(model, batch_sentences, to_log_softmax, criterion, optimizer, 
 
     return batch_loss, num_correct
 
-def train(model, sentences, epochs, batch_size, lr):
+def train(model, train_sentences, valid_sentences, epochs, batch_size, lr):
 
+    print("Training model...")
     to_log_softmax = nn.LogSoftmax(dim=-1)
     criterion = nn.NLLLoss()
     optimizer = optim.Adam(model.parameters(), lr=lr)
 
     for i in range(epochs):
+        print("Epoch " + str(i+1))
         train_loss = 0
         batch_sentences = []
-        for sentence in sentences:
+        for sentence in train_sentences:
             batch_sentences.append(sentence)
             if len(batch_sentences) == batch_size:
                 batch_loss, _ = process_batch(model, batch_sentences, to_log_softmax, criterion, optimizer)
@@ -81,8 +83,8 @@ def train(model, sentences, epochs, batch_size, lr):
             batch_loss, _ = process_batch(model, batch_sentences, to_log_softmax, criterion, optimizer)
             train_loss += batch_loss
 
-        #print("Training loss:" + str(train_loss))
-        neg_loglik, perplex, acc = evaluate(model, sentences, batch_size)
+        print("Training loss:" + str(train_loss))
+        neg_loglik, perplex, acc = evaluate(model, valid_sentences, batch_size)
         print("Validation:")
         print("NLL: " + str(neg_loglik))
         print("Perplexity: " + str(perplex))
@@ -142,8 +144,12 @@ def generate(model, n, max_len=20):
 def main():
 
     # Training data
-    train_file = "data/mock" #""data/02-21.10way.clean"
-    sentences = LineSentence(train_file)
+    train_file = "data/train.txt" #""data/02-21.10way.clean"
+    train_sentences = LineSentence(train_file)
+    valid_file = "data/valid.txt"
+    valid_sentences = LineSentence(valid_file)
+    test_file = "data/test.txt"
+    test_sentences = LineSentence(test_file)
 
     # Layer sizes
     input_size = 100
@@ -152,15 +158,15 @@ def main():
     # Training
     lr = 0.01
     epochs = 10
-    batch_size = 2
+    batch_size = 100
 
     # Create and train model
     vocab = build_vocab(train_file)
     model = RNNLM(vocab, input_size, hidden_size)
-    train(model, sentences, epochs, batch_size, lr)
+    train(model, train_sentences, valid_sentences, epochs, batch_size, lr)
 
     # Evaluate model
-    neg_loglik, perplex, acc = evaluate(model, sentences, batch_size)
+    neg_loglik, perplex, acc = evaluate(model, test_sentences, batch_size)
     print("Test:")
     print("NLL: " + str(neg_loglik))
     print("Perplexity: " + str(perplex))

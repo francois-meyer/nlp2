@@ -3,6 +3,7 @@
 
 from collections import Counter
 import torch
+import re
 
 class Vocab(object):
 
@@ -36,6 +37,8 @@ class Vocab(object):
 
 def build_vocab(corpus_file):
 
+    print("Building vocabulary...")
+
     # Go through each sentence in the corpus, adding words to the vocabulary
     vocab = Vocab()
     vocab.update("<PAD>")
@@ -49,6 +52,7 @@ def build_vocab(corpus_file):
                 vocab.update(token)
 
     return vocab
+
 
 def get_batch(sentences, vocab):
 
