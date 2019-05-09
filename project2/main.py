@@ -3,6 +3,7 @@ from torch import nn
 from torch import optim
 from utils import *
 from gensim.models.word2vec import LineSentence
+import numpy as np
 
 class RNNLM(nn.Module):
 
@@ -30,7 +31,7 @@ class RNNLM(nn.Module):
         return logits
 
 
-def train_batch(model, batch_sentences, log_softmax, criterion, optimizer):
+def process_batch(model, batch_sentences, to_log_softmax, criterion, optimizer, eval=False):
 
     # Get batch and propagate forward
     input_indices, target_indices = get_batch(batch_sentences, model.vocab)
@@ -38,20 +39,31 @@ def train_batch(model, batch_sentences, log_softmax, criterion, optimizer):
     num_examples = target_indices.size(0) * target_indices.size(1)
 
     # Compute NLL loss
-    log_softmax = log_softmax(logits.view([num_examples, -1]))
+    log_softmax = to_log_softmax(logits.view([num_examples, -1]))
     loss = criterion(log_softmax, target_indices.view(-1))
     batch_loss = loss.item()
 
     # Backpropagate error
-    model.zero_grad()
-    loss.backward()
-    optimizer.step()
+    if not eval:
+        model.zero_grad()
+        loss.backward()
+        optimizer.step()
 
-    return batch_loss
+    # Compute word prediction accuracy
+    num_correct = None
+    if eval:
+        predictions = logits.view([num_examples, -1]).argmax(dim=-1)
+        targets = target_indices.view(-1)
+        num_correct = ((predictions == targets) & (targets != model.vocab.PAD_INDEX)).sum().item()
+        # print(predictions)
+        # print(targets)
+        # print(num_correct)
+
+    return batch_loss, num_correct
 
 def train(model, sentences, epochs, batch_size, lr):
 
-    log_softmax = nn.LogSoftmax()
+    to_log_softmax = nn.LogSoftmax(dim=-1)
     criterion = nn.NLLLoss()
     optimizer = optim.Adam(model.parameters(), lr=lr)
 
@@ -61,16 +73,54 @@ def train(model, sentences, epochs, batch_size, lr):
         for sentence in sentences:
             batch_sentences.append(sentence)
             if len(batch_sentences) == batch_size:
-                train_loss += train_batch(model, batch_sentences, log_softmax, criterion, optimizer)
+                batch_loss, _ = process_batch(model, batch_sentences, to_log_softmax, criterion, optimizer)
+                train_loss += batch_loss
                 batch_sentences = []
 
         if len(batch_sentences) > 0:
-            train_loss += train_batch(model, batch_sentences, log_softmax, criterion, optimizer)
+            batch_loss, _ = process_batch(model, batch_sentences, to_log_softmax, criterion, optimizer)
+            train_loss += batch_loss
 
-        print("Training loss:" + str(train_loss))
+        #print("Training loss:" + str(train_loss))
+        neg_loglik, perplex, acc = evaluate(model, sentences, batch_size)
+        print("Validation:")
+        print("NLL: " + str(neg_loglik))
+        print("Perplexity: " + str(perplex))
+        print("Accuracy: " + str(acc))
+
 
 def evaluate(model, sentences, batch_size):
 
+    to_log_softmax = nn.LogSoftmax(dim=-1)
+    criterion = nn.NLLLoss()
+    optimizer = None
+
+    neg_loglik = 0
+    total_predictions = 0
+    num_correct = 0
+    batch_sentences = []
+    for sentence in sentences:
+        batch_sentences.append(sentence)
+        if len(batch_sentences) == batch_size:
+            batch_loss, batch_correct = process_batch(model, batch_sentences, to_log_softmax, criterion, optimizer, eval=True)
+            neg_loglik += batch_loss
+            num_correct += batch_correct
+            total_predictions += sum([len(sentence)+1 for sentence in batch_sentences])
+            batch_sentences = []
+
+    if len(batch_sentences) > 0:
+        batch_loss, batch_correct = process_batch(model, batch_sentences, to_log_softmax, criterion, optimizer, eval=True)
+        neg_loglik += batch_loss
+        num_correct += batch_correct
+        total_predictions += sum([len(sentence)+1 for sentence in batch_sentences])
+
+    perplex = np.exp(neg_loglik / total_predictions)
+    acc = num_correct / total_predictions
+    #
+    # print(num_correct)
+    # print(total_predictions)
+
+    return neg_loglik, perplex, acc
 
 
 def generate(model, n, max_len=20):
@@ -92,7 +142,7 @@ def generate(model, n, max_len=20):
 def main():
 
     # Training data
-    train_file = "data/vw.txt" #""data/02-21.10way.clean"
+    train_file = "data/mock" #""data/02-21.10way.clean"
     sentences = LineSentence(train_file)
 
     # Layer sizes
@@ -102,16 +152,25 @@ def main():
     # Training
     lr = 0.01
     epochs = 10
-    batch_size = 10
+    batch_size = 2
 
     # Create and train model
     vocab = build_vocab(train_file)
     model = RNNLM(vocab, input_size, hidden_size)
     train(model, sentences, epochs, batch_size, lr)
 
+    # Evaluate model
+    neg_loglik, perplex, acc = evaluate(model, sentences, batch_size)
+    print("Test:")
+    print("NLL: " + str(neg_loglik))
+    print("Perplexity: " + str(perplex))
+    print("Accuracy: " + str(acc))
+
     # Generate samples
     samples = generate(model, n=10)
     print(samples)
+
+
 
 if __name__ == "__main__":
     main()
