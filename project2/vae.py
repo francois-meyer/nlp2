@@ -7,6 +7,8 @@ from utils import *
 from gensim.models.word2vec import LineSentence
 import numpy as np
 
+from scipy.stats import multivariate_normal
+
 class SentenceVAE(nn.Module):
 
     def __init__(self, vocab, input_size, hidden_size, latent_size):
@@ -54,13 +56,25 @@ class SentenceVAE(nn.Module):
 
         return logits, mean, sd
 
+    def decode(self, input_indices, z):
 
-def process_batch(model, batch_sentences, to_log_softmax, criterion, optimizer, eval=False):
+        embeddings = self.embed(input_indices)
+
+        # Decoder
+        init = self.tanh(self.affine_init(z))
+        outputs, final_hidden = self.gru_decoder(embeddings, init.unsqueeze(0))
+        logits = self.affine_decoder(outputs)
+
+        return logits
+
+
+def process_batch(model, batch_sentences, to_log_softmax, criterion, optimizer, eval=False, num_samples=10):
 
     # Get batch and propagate forward
     input_indices, target_indices = get_batch(batch_sentences, model.vocab)
     logits, means, sds = model(input_indices)
     num_examples = target_indices.size(0) * target_indices.size(1)
+    batch_size = len(batch_sentences)
 
     # Compute NLL loss
     log_softmax = to_log_softmax(logits.view([num_examples, -1]))
@@ -82,12 +96,29 @@ def process_batch(model, batch_sentences, to_log_softmax, criterion, optimizer, 
     # Compute word prediction accuracy
     num_correct = None
     if eval:
+        # Compute word predictions
         predictions = logits.view([num_examples, -1]).argmax(dim=-1)
         targets = target_indices.view(-1)
         num_correct = ((predictions == targets) & (targets != model.vocab.PAD_INDEX)).sum().item()
-        # print(predictions)
-        # print(targets)
-        # print(num_correct)
+
+        # Approximate NLL with importance sampling
+        qs = []
+        for i in range(batch_size):
+            # Sample importance distribution q
+            epsilon = Variable(torch.randn([num_samples, model.latent_size]))
+            samples = means[i] + epsilon * sds[i]
+
+            # Evaluate importance pdf q(z|x)
+            qs.append(multivariate_normal.pdf(samples.detach().numpy(), mean=means[i].detach().numpy(),
+                                              cov=sds[i].detach().numpy()))
+
+            # Evaluate nominal pdf p(z, x)
+            to_softmax = nn.Softmax(dim=-1)
+            logits = model.decode(input_indices[i].repeat([num_samples, input_indices[i].size(0)]), samples)
+            softmax = to_softmax(logits)
+            target_softmax = torch.gather(softmax, -1, target_indices[i].repeat([num_samples, target_indices[i].size(0), 1]))
+            print("hello")
+
 
     return elbo, num_correct
 
