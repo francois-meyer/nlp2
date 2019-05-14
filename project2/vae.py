@@ -102,23 +102,31 @@ def process_batch(model, batch_sentences, to_log_softmax, criterion, optimizer, 
         num_correct = ((predictions == targets) & (targets != model.vocab.PAD_INDEX)).sum().item()
 
         # Approximate NLL with importance sampling
-        qs = []
+        total = 0
         for i in range(batch_size):
             # Sample importance distribution q
             epsilon = Variable(torch.randn([num_samples, model.latent_size]))
             samples = means[i] + epsilon * sds[i]
 
             # Evaluate importance pdf q(z|x)
-            qs.append(multivariate_normal.pdf(samples.detach().numpy(), mean=means[i].detach().numpy(),
-                                              cov=sds[i].detach().numpy()))
+            qs = multivariate_normal.pdf(samples.detach().numpy(), mean=means[i].detach().numpy(), cov=sds[i].detach().numpy())
 
             # Evaluate nominal pdf p(z, x)
             to_softmax = nn.Softmax(dim=-1)
-            logits = model.decode(input_indices[i].repeat([num_samples, input_indices[i].size(0)]), samples)
+            sentence_input_indices = input_indices[i].repeat([num_samples, 1])
+            logits = model.decode(sentence_input_indices, samples)
             softmax = to_softmax(logits)
-            target_softmax = torch.gather(softmax, -1, target_indices[i].repeat([num_samples, target_indices[i].size(0), 1]))
-            print("hello")
+            sentence_target_indices = target_indices[i].repeat([num_samples, 1]).view(num_samples, target_indices[i].size(0), 1)
+            target_softmax = torch.gather(softmax, -1, sentence_target_indices).view(num_samples, target_indices[i].size(0))
+            ps = torch.prod(target_softmax, -1)
 
+            # Average importance samples
+            sample_values = ps.detach().numpy() / qs
+            sample_mean = sample_values.mean()
+            total += np.log(sample_mean)
+
+        nll_estimate = -total / batch_size
+        return nll_estimate, num_correct
 
     return elbo, num_correct
 

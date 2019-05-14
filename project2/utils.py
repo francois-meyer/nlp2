@@ -51,6 +51,7 @@ def build_vocab(corpus_file):
             for token in line.split():
                 vocab.update(token)
 
+    print("Created vocabulary of size: " + str(vocab.size()))
     return vocab
 
 
