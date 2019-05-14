@@ -20,10 +20,10 @@ class SentenceVAE(nn.Module):
         # Encoder
         self.embed = nn.Embedding(vocab.size(), input_size, padding_idx=0)
         self.gru_encode = nn.GRU(input_size, hidden_size, batch_first=True, bidirectional=True)
-        self.affine_encoder = nn.Linear(hidden_size*2, vocab.size())
+        #self.affine_encoder = nn.Linear(hidden_size*2, vocab.size())
 
-        self.dense_mean = nn.Linear(hidden_size*2, 1)
-        self.dense_sd = nn.Linear(hidden_size*2, 1)
+        self.dense_mean = nn.Linear(hidden_size*2, self.latent_size)
+        self.dense_sd = nn.Linear(hidden_size*2, self.latent_size)
         self.softplus = nn.Softplus()
 
         # Decoder
@@ -34,20 +34,23 @@ class SentenceVAE(nn.Module):
 
     def forward(self, input_indices):
 
+        batch_size = input_indices.size(0)
+
         # Encoder
         embeddings = self.embed(input_indices)
         outputs, final_hidden = self.gru_encode(embeddings)
-        h = self.affine_encoder(final_hidden)
+        #h = self.affine_encoder(final_hidden)
+        h = final_hidden.view(batch_size, self.hidden_size * 2)
 
         mean = self.dense_mean(h)
         sd = self.softplus(self.dense_sd(h))
-        epsilon = Variable(torch.randn([input_indices.size(0), self.latent_size]))
+        epsilon = Variable(torch.randn([batch_size, self.latent_size]))
         z = mean + epsilon * sd
 
         # Decoder
         init = self.tanh(self.affine_init(z))
-        outputs, final_hidden = self.gru_decode(embeddings, init)
-        logits = self.affine(outputs)
+        outputs, final_hidden = self.gru_decoder(embeddings, init.unsqueeze(0))
+        logits = self.affine_decoder(outputs)
 
         return logits
 
@@ -165,11 +168,11 @@ def generate(model, n, max_len=20):
 def main():
 
     # Training data
-    train_file = "data/train.txt" #""data/02-21.10way.clean"
+    train_file = "data/vw.txt" #""data/02-21.10way.clean"
     train_sentences = LineSentence(train_file)
-    valid_file = "data/valid.txt"
+    valid_file = "data/vw.txt"
     valid_sentences = LineSentence(valid_file)
-    test_file = "data/test.txt"
+    test_file = "data/vw.txt"
     test_sentences = LineSentence(test_file)
 
     # Layer sizes
@@ -180,7 +183,7 @@ def main():
     # Training
     lr = 0.01
     epochs = 10
-    batch_size = 100
+    batch_size = 10
 
     # Create and train model
     vocab = build_vocab(train_file)
