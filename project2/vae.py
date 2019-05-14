@@ -52,25 +52,31 @@ class SentenceVAE(nn.Module):
         outputs, final_hidden = self.gru_decoder(embeddings, init.unsqueeze(0))
         logits = self.affine_decoder(outputs)
 
-        return logits
+        return logits, mean, sd
 
 
 def process_batch(model, batch_sentences, to_log_softmax, criterion, optimizer, eval=False):
 
     # Get batch and propagate forward
     input_indices, target_indices = get_batch(batch_sentences, model.vocab)
-    logits = model(input_indices)
+    logits, means, sds = model(input_indices)
     num_examples = target_indices.size(0) * target_indices.size(1)
 
     # Compute NLL loss
     log_softmax = to_log_softmax(logits.view([num_examples, -1]))
-    loss = criterion(log_softmax, target_indices.view(-1))
-    batch_loss = loss.item()
+    nll_loss = criterion(log_softmax, target_indices.view(-1))
+    nll_loss = nll_loss.item()
+
+    # Compute KL divergece
+    kld = 0.5 * torch.sum(-torch.log(sds.pow(2)) - 1 + means.pow(2) + sds.pow(2))
+
+    # Compute ELBO
+    elbo = nll_loss + kld
 
     # Backpropagate error
     if not eval:
         model.zero_grad()
-        loss.backward()
+        elbo.backward()
         optimizer.step()
 
     # Compute word prediction accuracy
@@ -83,7 +89,7 @@ def process_batch(model, batch_sentences, to_log_softmax, criterion, optimizer, 
         # print(targets)
         # print(num_correct)
 
-    return batch_loss, num_correct
+    return elbo, num_correct
 
 def train(model, train_sentences, valid_sentences, epochs, batch_size, lr):
 
@@ -107,7 +113,7 @@ def train(model, train_sentences, valid_sentences, epochs, batch_size, lr):
             batch_loss, _ = process_batch(model, batch_sentences, to_log_softmax, criterion, optimizer)
             train_loss += batch_loss
 
-        print("Training loss:" + str(train_loss))
+        print("ELBO:" + str(train_loss))
         neg_loglik, perplex, acc = evaluate(model, valid_sentences, batch_size)
         print("Validation:")
         print("NLL: " + str(neg_loglik))
