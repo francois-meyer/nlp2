@@ -287,12 +287,11 @@ def main():
 
     # Training
     lr = 0.001
-    epochs = 10
+    epochs = 2
     batch_size = 32
 
     # Create and train model
     vocab = build_vocab(train_file)
-    print(vocab)
     model = SentenceVAE(vocab, input_size, hidden_size, latent_size)
     train(model, train_sentences, valid_sentences, epochs, batch_size, lr)
 
@@ -308,7 +307,7 @@ def main():
     print(samples)
 
     # Reconstruct sentence
-    sentence = "<SOS> Anger wants a voice <EOS>"
+    sentence = "<SOS> in that case there will be plenty of blame to go around <EOS>"
     samples = reconstruct_sentence(model, sentence)
     print(samples)
 
