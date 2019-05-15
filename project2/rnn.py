@@ -4,6 +4,7 @@ from torch import optim
 from utils import *
 from gensim.models.word2vec import LineSentence
 import numpy as np
+import random
 
 class RNNLM(nn.Module):
 
@@ -59,9 +60,6 @@ def process_batch(model, batch_sentences, to_log_softmax, criterion, optimizer, 
         predictions = logits.view([num_examples, -1]).argmax(dim=-1)
         targets = target_indices.view(-1)
         num_correct = ((predictions == targets) & (targets != model.vocab.PAD_INDEX)).sum().item()
-        # print(predictions)
-        # print(targets)
-        # print(num_correct)
 
     return batch_loss, num_correct
 
@@ -69,7 +67,7 @@ def train(model, train_sentences, valid_sentences, epochs, batch_size, lr):
 
     print("Training model...")
     to_log_softmax = nn.LogSoftmax(dim=-1)
-    criterion = nn.NLLLoss()
+    criterion = nn.NLLLoss(ignore_index=model.vocab.PAD_INDEX)
     optimizer = optim.Adam(model.parameters(), lr=lr)
 
     for i in range(epochs):
@@ -122,9 +120,6 @@ def evaluate(model, sentences, batch_size):
 
     perplex = np.exp(neg_loglik / total_predictions)
     acc = num_correct / total_predictions
-    #
-    # print(num_correct)
-    # print(total_predictions)
 
     return neg_loglik, perplex, acc
 
@@ -134,7 +129,8 @@ def generate(model, n, max_len=20):
     samples = []
     with torch.no_grad():
         while len(samples) < n:
-            next_word = "<SOS>"
+            next_index = random.randint(0, model.vocab.size())
+            next_word = model.vocab.index2word[next_index]
             final_hidden = None
             sample = [next_word]
             while next_word != "<EOS>" and len(sample) <= max_len:
@@ -142,18 +138,19 @@ def generate(model, n, max_len=20):
                 max_index = torch.argmax(logits)
                 next_word = model.vocab.index2word[max_index]
                 sample.append(next_word)
-            samples.append(sample)
+            if next_word == "<EOS>":
+                samples.append(sample)
     return samples
 
 
 def main():
 
     # Training data
-    train_file = "data/meyer" #""data/02-21.10way.clean"
+    train_file = "data/train.txt" #""data/02-21.10way.clean"
     train_sentences = LineSentence(train_file)
-    valid_file = "data/meyer"
+    valid_file = "data/valid.txt"
     valid_sentences = LineSentence(valid_file)
-    test_file = "data/meyer"
+    test_file = "data/test.txt"
     test_sentences = LineSentence(test_file)
 
     # Layer sizes
@@ -178,7 +175,7 @@ def main():
     print("Accuracy: " + str(acc))
 
     # Generate samples
-    samples = generate(model, n=10)
+    samples = generate(model, n=100)
     print(samples)
 
 
