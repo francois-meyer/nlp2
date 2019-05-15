@@ -56,16 +56,34 @@ class SentenceVAE(nn.Module):
 
         return logits, mean, sd
 
-    def decode(self, input_indices, z):
+    def encode(self, input_indices):
+
+        batch_size = input_indices.size(0)
+
+        # Encoder
+        embeddings = self.embed(input_indices)
+        outputs, final_hidden = self.gru_encode(embeddings)
+        #h = self.affine_encoder(final_hidden)
+        h = final_hidden.view(batch_size, self.hidden_size * 2)
+
+        mean = self.dense_mean(h)
+        sd = self.softplus(self.dense_sd(h))
+        epsilon = Variable(torch.randn([batch_size, self.latent_size]))
+        z = mean + epsilon * sd
+
+        return mean, sd
+
+    def decode(self, input_indices, init_hidden, latent=True):
 
         embeddings = self.embed(input_indices)
 
         # Decoder
-        init = self.tanh(self.affine_init(z))
-        outputs, final_hidden = self.gru_decoder(embeddings, init.unsqueeze(0))
+        if latent:
+            init_hidden = self.tanh(self.affine_init(init_hidden)).unsqueeze(0)
+        outputs, final_hidden = self.gru_decoder(embeddings, init_hidden)
         logits = self.affine_decoder(outputs)
 
-        return logits
+        return logits, final_hidden
 
 
 def process_batch(model, batch_sentences, to_log_softmax, criterion, optimizer, eval=False, num_samples=10):
@@ -114,7 +132,7 @@ def process_batch(model, batch_sentences, to_log_softmax, criterion, optimizer, 
             # Evaluate nominal pdf p(z, x)
             to_softmax = nn.Softmax(dim=-1)
             sentence_input_indices = input_indices[i].repeat([num_samples, 1])
-            logits = model.decode(sentence_input_indices, samples)
+            logits, final_hidden_ = model.decode(sentence_input_indices, samples)
             softmax = to_softmax(logits)
             sentence_target_indices = target_indices[i].repeat([num_samples, 1]).view(num_samples, target_indices[i].size(0), 1)
             target_softmax = torch.gather(softmax, -1, sentence_target_indices).view(num_samples, target_indices[i].size(0))
@@ -201,14 +219,55 @@ def generate(model, n, max_len=20):
         while len(samples) < n:
             next_word = "<SOS>"
             sample = [next_word]
+            init_hidden = Variable(torch.randn(1, model.latent_size))
+            latent = True
             while next_word != "<EOS>" and len(sample) <= max_len:
-                logits = model(torch.LongTensor([[model.vocab.word2index[next_word]]]))
+                logits, init_hidden = model.decode(torch.LongTensor([[model.vocab.word2index[next_word]]]), init_hidden, latent)
+                latent = False
                 max_index = torch.argmax(logits)
                 next_word = model.vocab.index2word[max_index]
                 sample.append(next_word)
             samples.append(sample)
     return samples
 
+def reconstruct_sentence(model, sentence, num_samples=10, max_len=20):
+
+    # Get posterior distribution
+    input_indices, target_indices = get_batch([sentence], model.vocab)
+    mean, sd = model.encode(input_indices)
+
+    # Generate samples from this
+    samples = []
+    with torch.no_grad():
+        # Use the approximate posterior mean
+        next_word = "<SOS>"
+        sample = [next_word]
+        init_hidden = Variable(mean)
+        latent = True
+        while next_word != "<EOS>" and len(sample) <= max_len:
+            logits, init_hidden = model.decode(torch.LongTensor([[model.vocab.word2index[next_word]]]), init_hidden, latent)
+            latent = False
+            max_index = torch.argmax(logits)
+            next_word = model.vocab.index2word[max_index]
+            sample.append(next_word)
+        samples.append(sample)
+
+        # Use 10 samples from ~z
+        while len(samples) < num_samples+1:
+            next_word = "<SOS>"
+            sample = [next_word]
+            epsilon = Variable(torch.randn(1, model.latent_size))
+            init_hidden = mean + epsilon * sd
+            latent = True
+            while next_word != "<EOS>" and len(sample) <= max_len:
+                logits, init_hidden = model.decode(torch.LongTensor([[model.vocab.word2index[next_word]]]), init_hidden, latent)
+                latent = False
+                max_index = torch.argmax(logits)
+                next_word = model.vocab.index2word[max_index]
+                sample.append(next_word)
+            samples.append(sample)
+
+    return samples
 
 def main():
 
@@ -246,6 +305,10 @@ def main():
     samples = generate(model, n=10)
     print(samples)
 
+    # Reconstruct sentence
+    sentence = "<SOS> Anger wants a voice <EOS>"
+    samples = reconstruct_sentence(model, sentence)
+    print(samples)
 
 
 if __name__ == "__main__":
