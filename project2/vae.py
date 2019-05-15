@@ -272,11 +272,11 @@ def reconstruct_sentence(model, sentence, num_samples=10, max_len=20):
 def main():
 
     # Training data
-    train_file = "data/vw.txt" #""data/02-21.10way.clean"
+    train_file = "data/test.txt" #""data/02-21.10way.clean"
     train_sentences = LineSentence(train_file)
-    valid_file = "data/vw.txt"
+    valid_file = "data/test.txt"
     valid_sentences = LineSentence(valid_file)
-    test_file = "data/vw.txt"
+    test_file = "data/test.txt"
     test_sentences = LineSentence(test_file)
 
     # Layer sizes
@@ -287,7 +287,7 @@ def main():
     # Training
     lr = 0.01
     epochs = 10
-    batch_size = 10
+    batch_size = 100
 
     # Create and train model
     vocab = build_vocab(train_file)
