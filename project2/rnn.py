@@ -23,19 +23,23 @@ class RNNLM(nn.Module):
         #     nn.Linear(hidden_dim, output_dim)
         # )
 
-    def forward(self, input_indices):
+    def forward(self, input_indices, init_hidden=None):
 
         embeddings = self.embed(input_indices)
-        outputs, final_hidden = self.gru(embeddings)
+
+        if init_hidden is None:
+            outputs, final_hidden = self.gru(embeddings)
+        else:
+            outputs, final_hidden = self.gru(embeddings, init_hidden)
         logits = self.affine(outputs)
-        return logits
+        return logits, final_hidden
 
 
 def process_batch(model, batch_sentences, to_log_softmax, criterion, optimizer, eval=False):
 
     # Get batch and propagate forward
     input_indices, target_indices = get_batch(batch_sentences, model.vocab)
-    logits = model(input_indices)
+    logits, final_hidden_ = model(input_indices)
     num_examples = target_indices.size(0) * target_indices.size(1)
 
     # Compute NLL loss
@@ -94,7 +98,7 @@ def train(model, train_sentences, valid_sentences, epochs, batch_size, lr):
 def evaluate(model, sentences, batch_size):
 
     to_log_softmax = nn.LogSoftmax(dim=-1)
-    criterion = nn.NLLLoss()
+    criterion = nn.NLLLoss(ignore_index=model.vocab.PAD_INDEX)
     optimizer = None
 
     neg_loglik = 0
@@ -131,9 +135,10 @@ def generate(model, n, max_len=20):
     with torch.no_grad():
         while len(samples) < n:
             next_word = "<SOS>"
+            final_hidden = None
             sample = [next_word]
             while next_word != "<EOS>" and len(sample) <= max_len:
-                logits = model(torch.LongTensor([[model.vocab.word2index[next_word]]]))
+                logits, final_hidden = model(torch.LongTensor([[model.vocab.word2index[next_word]]]), final_hidden)
                 max_index = torch.argmax(logits)
                 next_word = model.vocab.index2word[max_index]
                 sample.append(next_word)
@@ -144,11 +149,11 @@ def generate(model, n, max_len=20):
 def main():
 
     # Training data
-    train_file = "data/train.txt" #""data/02-21.10way.clean"
+    train_file = "data/meyer" #""data/02-21.10way.clean"
     train_sentences = LineSentence(train_file)
-    valid_file = "data/valid.txt"
+    valid_file = "data/meyer"
     valid_sentences = LineSentence(valid_file)
-    test_file = "data/test.txt"
+    test_file = "data/meyer"
     test_sentences = LineSentence(test_file)
 
     # Layer sizes
@@ -156,9 +161,9 @@ def main():
     hidden_size = 100
 
     # Training
-    lr = 0.01
+    lr = 0.001
     epochs = 10
-    batch_size = 100
+    batch_size = 32
 
     # Create and train model
     vocab = build_vocab(train_file)
