@@ -128,30 +128,35 @@ def eval_batch(model, batch_sentences, num_samples=10):
     num_correct = ((predictions == targets) & (targets != model.vocab.PAD_INDEX)).sum().item()
 
     # Approximate NLL with importance sampling
-    total = 0
+    to_log_softmax = nn.LogSoftmax(dim=-1)
+    log_total = 0
     for i in range(batch_size):
         # Sample importance distribution q
         epsilon = Variable(torch.randn([num_samples, model.latent_size]))
         samples = means[i] + epsilon * sds[i]
 
-        # Evaluate importance pdf q(z|x)
-        qs = multivariate_normal.pdf(samples.detach().numpy(), mean=means[i].detach().numpy(), cov=sds[i].detach().numpy())
+        # Evaluate importance pdf log q(z|x)
+        log_qzx = torch.Tensor(multivariate_normal.logpdf(samples.detach().numpy(), mean=means[i].detach().numpy(), cov=sds[i].detach().numpy()))
 
-        # Evaluate nominal pdf p(z, x)
-        to_softmax = nn.Softmax(dim=-1)
+        # Evaluate prior pdf log p(z)
+        log_pz = torch.Tensor(multivariate_normal.logpdf(samples.detach().numpy(), mean=np.zeros(model.latent_size),
+                                                          cov=np.ones(model.latent_size)))
+
+        # Evaluate nominal pdf log p(z, x) = log p(x|z) + log p(z)r
+        # Fi
         sentence_input_indices = input_indices[i].repeat([num_samples, 1])
         logits, final_hidden_ = model.decode(sentence_input_indices, samples)
-        softmax = to_softmax(logits)
+        log_softmax = to_log_softmax(logits)
         sentence_target_indices = target_indices[i].repeat([num_samples, 1]).view(num_samples, target_indices[i].size(0), 1)
-        target_softmax = torch.gather(softmax, -1, sentence_target_indices).view(num_samples, target_indices[i].size(0))
-        ps = torch.prod(target_softmax, -1)
+        target_log_softmax = torch.gather(log_softmax, -1, sentence_target_indices).view(num_samples, target_indices[i].size(0))
+        log_pxz = torch.sum(target_log_softmax, -1)
 
         # Average importance samples
-        sample_values = ps.detach().numpy() / qs
-        sample_mean = sample_values.mean()
-        total += np.log(sample_mean)
+        sample_values = log_pz + log_pxz - log_qzx
+        sample_mean = torch.logsumexp(sample_values, dim=0) - torch.log(torch.Tensor([num_samples]))
+        log_total += sample_mean.detach().numpy()
 
-    nll_estimate = -total / batch_size
+    nll_estimate = -log_total / batch_size
     return nll_estimate, num_correct
 
 
@@ -270,6 +275,37 @@ def reconstruct_sentence(model, sentence, num_samples=10, max_len=20):
 
     return samples
 
+def homotopy(model, sentence1, sentence2, num_samples=10):
+
+    # Get latent represenations
+    input_indices, target_indices_ = get_batch([sentence1], model.vocab)
+    z1, sd_ = model.encode(input_indices)
+
+    input_indices, target_indices_ = get_batch([sentence2], model.vocab)
+    z2, sd_ = model.encode(input_indices)
+
+    # Compute linear interpolations
+    step_size = 1.0/num_samples
+    alphas = list(np.arange(0, 1.01, step_size))
+
+    samples = []
+    with torch.no_grad():
+        for alpha in alphas:
+            next_word = "<SOS>"
+            sample = [next_word]
+            interpolation = alpha * z2 + (1 - alpha) * z1
+            init_hidden = Variable(interpolation)
+            latent = True
+            while next_word != "<EOS>":
+                logits, init_hidden = model.decode(torch.LongTensor([[model.vocab.word2index[next_word]]]), init_hidden,
+                                                   latent)
+                latent = False
+                max_index = torch.argmax(logits)
+                next_word = model.vocab.index2word[max_index]
+                sample.append(next_word)
+            samples.append(sample)
+    return samples
+
 def main():
 
     # Training data
@@ -287,7 +323,7 @@ def main():
 
     # Training
     lr = 0.001
-    epochs = 2
+    epochs = 10
     batch_size = 32
 
     # Create and train model
@@ -309,6 +345,12 @@ def main():
     # Reconstruct sentence
     sentence = "<SOS> in that case there will be plenty of blame to go around <EOS>"
     samples = reconstruct_sentence(model, sentence)
+    print(samples)
+
+    # Sample homotopies between two sentences
+    sentence1 = "<SOS> Anger wants a voice <EOS>"
+    sentence2 = "<SOS> Voices wanna sing <EOS>"
+    samples = homotopy(model, sentence1, sentence2, num_samples=10)
     print(samples)
 
 

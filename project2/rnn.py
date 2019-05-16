@@ -126,17 +126,22 @@ def evaluate(model, sentences, batch_size):
 
 def generate(model, n, max_len=20):
 
+    to_softmax = nn.Softmax(dim=-1)
+
     samples = []
     with torch.no_grad():
         while len(samples) < n:
-            next_index = random.randint(0, model.vocab.size())
-            next_word = model.vocab.index2word[next_index]
+            #next_index = random.randint(0, model.vocab.size())
+            next_word = "<SOS>"
             final_hidden = None
-            sample = [next_word]
+            #_, final_hidden = model(torch.LongTensor([[model.vocab.SOS_INDEX]]), None)
+            sample = ["<SOS>"]
             while next_word != "<EOS>" and len(sample) <= max_len:
                 logits, final_hidden = model(torch.LongTensor([[model.vocab.word2index[next_word]]]), final_hidden)
-                max_index = torch.argmax(logits)
-                next_word = model.vocab.index2word[max_index]
+                #max_index = torch.argmax(logits)
+                softmax = to_softmax(logits.view([-1]))
+                next_index = np.random.choice(model.vocab.size(), p=softmax.detach().numpy())
+                next_word = model.vocab.index2word[next_index]
                 sample.append(next_word)
             if next_word == "<EOS>":
                 samples.append(sample)
