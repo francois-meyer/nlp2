@@ -34,6 +34,30 @@ class Vocab(object):
     def size(self):
         return len(self.word2index)
 
+    def finalise(self, min_count):
+
+        # Discard words that occur less than min_count
+        print("Raw vocab size is " + str(self.size()) + ".")
+        discard_count = 0
+        raw_train_count = 0
+        train_count = 0
+        for word in list(self.counter):
+            raw_train_count += self.counter[word]
+            if self.counter[word] < min_count and self.word2index[word] > 3:
+                del self.word2index[word]
+                self.index2word.remove(word)
+                del self.counter[word]
+                discard_count += 1
+            else:
+                train_count += self.counter[word]
+
+        for index, word in enumerate(self.index2word):
+            self.word2index[word] = index
+
+        print("Discarded " + str(discard_count) + " words with count less than " + str(min_count) + ".")
+        print("Final vocab size is " + str(self.size()) + ".")
+        print("Training words down from " + str(raw_train_count) + " to " + str(train_count) + ".")
+
 
 def build_vocab(corpus_file):
 
@@ -46,13 +70,23 @@ def build_vocab(corpus_file):
     vocab.update("<SOS>")
     vocab.update("<EOS>")
 
+    num_sentences = 0
     with open(corpus_file) as file:
         for line in file:
+            num_sentences += 1
             for token in line.split():
                 vocab.update(token)
-
+    vocab.finalise(min_count=2)
     print("Created vocabulary of size: " + str(vocab.size()))
-    return vocab
+
+    # count = 0
+    # for word in vocab.word2index:
+    #     if vocab.counter[word] < 3:
+    #         vocab.word2index[word] = vocab.UNK_INDEX
+    #         count += 1
+    # print("Discarded " + str(count) + " words.")
+
+    return vocab, num_sentences
 
 
 def get_batch(sentences, vocab):
